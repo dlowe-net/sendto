@@ -1,0 +1,224 @@
+<html><head>
+    <title>Send Me Something</title>
+    <style>
+      body {
+          font-family: sans-serif;
+          width: 700px;
+          margin: 0 auto;
+      }
+      #submitbutton {
+          margin: 1em;
+      }
+      #image_uploads {
+          border: 1px ridge black;
+          border-radius: 5px;
+          background-color: #eee;
+          padding: 5px 10px;
+      }
+      #image_uploads:hover {
+          background-color: #888;
+          color: #fff;
+      }
+      #preview {
+      }
+      #send {
+          display: block;
+          margin-left: auto;
+      }
+      .file-container {
+          display: grid;
+          grid-template-columns: auto 10em 1em 5em;
+      }
+      .file-name {
+          grid-column: 1;
+          grid-row: 1;
+      }
+      .file-progress {
+          display: none;
+          line-height: 8px;
+          height: 8px;
+          margin-top: 5px;
+          grid-column: 2;
+          grid-row: 1;
+      }
+      .file-progress-on {
+          display: inline-block;
+      }
+      .file-status {
+          text-align: center;
+          margin-left: 1em;
+          grid-column: 3;
+          grid-row: 1;
+      }
+      .file-size {
+          text-align: right;
+          margin-left: 1em;
+          grid-column: 4;
+          grid-row: 1;
+      }
+    </style>
+    <script>
+      function $id(id) {
+          return document.getElementById(id);
+      }
+      function Init() {
+          if (!window.File || !window.FileList || !window.FileReader) {
+              // All this depends on the File API being present.
+              return;
+          }
+          var xhr = new XMLHttpRequest();
+          if (!xhr.upload) {
+              // We also need the XMLHttpRequest Upload API
+              return;
+          }
+          
+          UpdatePreview();
+          
+          $id("fileselect").addEventListener("change", UpdatePreview, false);
+          $id("send").addEventListener("click", StartUpload, false);
+          
+          $id("submitbutton").style.display = "none";
+          $id("fileselect").style.display = "none";
+          $id("sendcont").style.display = "block";
+      }
+
+      const kibi = 1024;
+      const mibi = kibi * 1024;
+      const gibi = mibi * 1024;
+      const tibi = gibi * 1024;
+
+      function descSize(s) {
+          if (s < kibi) {
+              return "<1KiB";
+          }
+          if (s < mibi) {
+              return (s/kibi).toFixed(1) + "KiB";
+          }
+          if (s < gibi) {
+              return (s/mibi).toFixed(1) + "MiB";
+          }
+          return (s/gibi).toFixed(1) + "GiB";
+      }
+      
+      function UpdatePreview() {
+          const preview = $id("preview");
+          while (preview.firstChild) {
+              preview.removeChild(preview.firstChild);
+          }
+
+          const curFiles = $id("fileselect").files;
+          if (curFiles.length == 0) {
+              const p = document.createElement("p");
+              p.textContent = "No files selected for upload.";
+              preview.appendChild(p);
+              $id("send").disabled = true;
+              return;
+          }
+
+          $id("send").disabled = false;
+
+          const list = document.createElement("ol");
+          list.id = "filelist";
+          preview.appendChild(list);
+          for (const file of curFiles) {
+              const listItem = document.createElement("li");
+              listItem.classList.add("file-container")
+              listItem.file = file;
+              const nameP = document.createElement("div");
+              nameP.classList.add("file-name")
+              nameP.textContent = file.name;
+              listItem.appendChild(nameP);
+              const progP = document.createElement("progress");
+              progP.classList.add("file-progress")
+              listItem.appendChild(progP);
+              const statusP = document.createElement("div");
+              statusP.classList.add("file-status")
+              listItem.appendChild(statusP);
+              const sizeP = document.createElement("div");
+              sizeP.classList.add("file-size")
+              sizeP.textContent = descSize(file.size);
+              listItem.appendChild(sizeP);
+              list.appendChild(listItem);
+          }
+      }
+      
+      function StartUpload() {
+          const list = $id("filelist");
+          const filelist = [];
+          
+          $id("send").disabled = true;
+          
+          // set up progress bars
+          for (var fileitem of list.children) {
+              if (fileitem.done) {
+                  continue;
+              }
+              const file = fileitem.file;
+              const progP = fileitem.firstChild.nextSibling;
+              progP.value = 0;
+              progP.max = file.size;
+              progP.classList.add("file-progress-on")
+              filelist.push(fileitem)
+          }
+          
+          UploadNextFile(filelist);
+          return true;
+      }
+      function UploadNextFile(filelist) {
+          if (filelist.length == 0) {
+              return;
+          }
+          const fileitem = filelist.shift();
+          const file = fileitem.file;
+          const progP = fileitem.firstChild.nextSibling;
+          const statusP = progP.nextSibling;
+          
+          const xhr = new XMLHttpRequest();
+          xhr.upload.addEventListener("progress", function(e) {
+              progP.value = e.loaded;
+              progP.max = e.total;
+          }, false);
+          xhr.upload.addEventListener("load", function(e) {
+              statusP.textContent = "\u2713";
+              statusP.style.color = "green";
+              fileitem.done = true;
+              UploadNextFile(filelist);
+          }, false);
+          xhr.upload.addEventListener("error", function(e) {
+              statusP.textContent = "\u2717";
+              statusP.style.color = "red";
+              UploadNextFile(filelist);
+          }, false);
+          
+          xhr.open("POST", $id("upload").action, true);
+          xhr.setRequestHeader("X_FILENAME", file.name);
+          xhr.send(file);
+      }
+      </script>
+  </head><body onLoad="Init();">
+    <h1>Send to me</h1>
+    <form id="upload" action="/upload" method="POST" enctype="multipart/form-data">
+      <fieldset>
+        <legend>File Upload</legend>
+
+        <div>
+          <button type="button" onclick='$id("fileselect").click();'>Add files to send</button>
+          <input type="file" id="fileselect" name="fileselect"
+                 multiple="multiple" />
+          <div id="submitbutton">
+            <button type="submit">Send Now</button>
+          </div>
+          <div id="preview_cont">
+            <div id="preview">
+              <p>No files selected.</p>
+            </div>
+          </div>
+        </div>
+        <div id="sendcont" style="display:none">
+          <button id="send" type="button">Send Now</button>
+        </div>
+      </fieldset>
+    </form>
+    <div id="messages">
+    </div>
+</body></html>
