@@ -30,27 +30,26 @@ func ReportError(w http.ResponseWriter, err error) {
 	w.WriteHeader(http.StatusInternalServerError)
 }
 
-func SaveToFile(fname string, w http.ResponseWriter, r io.Reader) {
+func SaveToFile(fname string, w http.ResponseWriter, r io.Reader) error {
 	// Make the filename safe
 	fname = strings.ReplaceAll(fname, string(os.PathSeparator), "_")
 	fname = strings.ReplaceAll(fname, "\0000", "?")
 	file, err := os.Create(filepath.Join(*outputDirFlag, fname))
 	if err != nil {
-		ReportError(w, err)
-		return
+		return err
 	}
 	defer file.Close()
 
 	_, err = io.CopyN(file, r, maxFileSize)
 	if err != nil && err != io.EOF {
-		ReportError(w, err)
-		return
+		return err
 	}
+	return nil
 }
 
 func HandleUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("X_FILENAME") == "" {
-		// Multipart
+		// Older browser - use multipart
 		reader, err := r.MultipartReader()
 		if err != nil {
 			ReportError(w, err)
@@ -67,14 +66,21 @@ func HandleUpload(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			log.Printf("Receiving '%s' via mime", part.FileName())
-			SaveToFile(part.FileName(), w, part)
+			if err := SaveToFile(part.FileName(), w, part); err != nil {
+				ReportError(w, err)
+				return
+			}
 		}
 	} else {
 		// Straight AJAX send
 		fname := r.Header.Get("X_FILENAME")
 		log.Printf("Receiving '%s' via ajax", fname)
-		SaveToFile(fname, w, r.Body)
+		if err := SaveToFile(fname, w, r.Body); err != nil {
+			ReportError(w, err)
+			return
+		}
 	}
+	// Success
 	w.WriteHeader(http.StatusNoContent)
 }
 
